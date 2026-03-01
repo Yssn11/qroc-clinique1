@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>QROC Clinique Firebase</title>
+
+<style>
+body {
+  font-family: Arial, sans-serif;
+  padding: 20px;
+  background: #f4f4f4;
+}
+
+.dark {
+  background: #121212;
+  color: white;
+}
+
+.container {
+  max-width: 800px;
+  margin: auto;
+  background: white;
+  padding: 20px;
+  border-radius: 8px;
+}
+
+.dark .container {
+  background: #1e1e1e;
+}
+
+button {
+  padding: 12px;
+  margin: 6px;
+  cursor: pointer;
+}
+
+.cas-btn {
+  width: 100%;
+  font-size: 16px;
+}
+
+textarea {
+  width: 100%;
+  padding: 10px;
+  margin-top: 10px;
+}
+
+.answer {
+  display: none;
+  padding: 10px;
+  margin-top: 10px;
+  background: #e8ffe8;
+  color: black;
+}
+
+.dark .answer {
+  background: #2b2b2b;
+  color: white;
+}
+
+.stats-list {
+  list-style-type: none;
+  padding: 0;
+}
+</style>
+</head>
+
+<body>
+
+<button onclick="toggleDark()">🌙 Mode nuit</button>
+
+<div id="home" class="container">
+  <h2>QROC Clinique</h2>
+  <p id="welcomeText"></p>
+
+  <p>Choisissez un cas clinique :</p>
+  <button class="cas-btn" onclick="startCas('cas1')">CAS 1 – Médecine légale</button>
+  <button class="cas-btn" onclick="startCas('cas2')">CAS 2 – Cardiologie</button>
+  <button class="cas-btn" onclick="startCas('cas3')">CAS 3 – Pneumologie</button>
+  <button class="cas-btn" onclick="startCas('cas4')">CAS 4 – Endocrinologie</button>
+  <button class="cas-btn" onclick="startCas('cas5')">CAS 5 – Gynécologie</button>
+
+  <h3>📊 Résultats enregistrés</h3>
+  <ul id="stats" class="stats-list"></ul>
+</div>
+
+<div id="quiz" class="container" style="display:none">
+  <h2 id="casTitle"></h2>
+  <h3 id="question"></h3>
+
+  <textarea id="userAnswer" placeholder="Écris ta réponse ici..."></textarea>
+
+  <div>
+    <button onclick="showAnswer()">Afficher la correction</button>
+    <button onclick="next(true)">✔ Correct</button>
+    <button onclick="next(false)">✘ Faux</button>
+  </div>
+
+  <div id="answer" class="answer"></div>
+  <p>Score : <span id="score">0</span></p>
+
+  <button onclick="backHome()">⬅ Retour aux CAS</button>
+</div>
+
+<!-- Firebase -->
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+
+<script>
+/* ===== Firebase Configuration ===== */
+const firebaseConfig = {
+  apiKey: "YOUR_API_KEY_HERE",
+  authDomain: "YOUR_AUTHDOMAIN_HERE",
+  projectId: "YOUR_PROJECTID_HERE",
+  storageBucket: "YOUR_STORAGEBUCKET_HERE",
+  messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
+  appId: "YOUR_APP_ID_HERE"
+};
+
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+
+/* ==== Variables & Data ==== */
+let username = "";
+let questions = [];
+let index = 0;
+let score = 0;
+let selectedCasId = "";
+
+/* ==== CAS Database ==== */
+const casData = {
+  cas1: {
+    title: "CAS 1 – Médecine légale",
+    questions: [
+      { q: "Êtes-vous obligé de vous déplacer ?", correction: "Oui, réquisition légale obligatoire." },
+      { q: "Éléments à rechercher lors de la levée de corps ?", correction: "Examen des lieux, vêtements, état du corps, prélèvements." },
+      { q: "Signes cadavériques observables ?", correction: "Rigidité, lividités, cyanose, hématomes, abrasions." }
+    ]
+  },
+  cas2: {
+    title: "CAS 2 – Cardiologie",
+    questions: [{ q: "Signes d'insuffisance cardiaque ?", correction: "Dyspnée, œdèmes, râles crépitants, turgescence jugulaire." }]
+  },
+  cas3: {
+    title: "CAS 3 – Pneumologie",
+    questions: [{ q: "Signes de détresse respiratoire ?", correction: "Polypnée, tirage, cyanose, agitation." }]
+  },
+  cas4: {
+    title: "CAS 4 – Endocrinologie",
+    questions: [{ q: "Signes cliniques du diabète ?", correction: "Polyurie, polydipsie, amaigrissement." }]
+  },
+  cas5: {
+    title: "CAS 5 – Gynécologie",
+    questions: [{ q: "Signes de grossesse extra-utérine ?", correction: "Douleur pelvienne, aménorrhée, métrorragies." }]
+  }
+};
+
+/* ==== Prompt Username ==== */
+function askUsername(){
+  username = prompt("Entrez votre nom:");
+  if(!username || username.trim() === ""){
+    alert("Le nom est requis.");
+    askUsername(); // إعادة الطلب
+  } else {
+    document.getElementById("welcomeText").innerText = "Bienvenue, " + username + "!";
+    loadStats();
+  }
+}
+askUsername();
+
+/* ==== Functions ==== */
+function startCas(casId){
+  selectedCasId = casId;
+  const selected = casData[casId];
+  questions = selected.questions;
+  index = 0;
+  score = 0;
+
+  document.getElementById("casTitle").innerText = selected.title;
+  document.getElementById("score").innerText = score;
+
+  document.getElementById("home").style.display = "none";
+  document.getElementById("quiz").style.display = "block";
+  loadQuestion();
+}
+
+function loadQuestion(){
+  document.getElementById("question").innerText = questions[index].q;
+  document.getElementById("answer").style.display = "none";
+  document.getElementById("userAnswer").value = "";
+}
+
+function showAnswer(){
+  document.getElementById("answer").innerText = questions[index].correction;
+  document.getElementById("answer").style.display = "block";
+}
+
+function next(isCorrect){
+  if(isCorrect) score++;
+  document.getElementById("score").innerText = score;
+  index++;
+
+  if(index < questions.length){
+    loadQuestion();
+  } else {
+    alert("Fin du CAS ✅ Score : " + score + "/" + questions.length);
+
+    db.collection("results").add({
+      user: username,
+      cas: selectedCasId,
+      score: score,
+      total: questions.length,
+      date: new Date().toLocaleString()
+    }).then(() => {
+      backHome();
+    });
+  }
+}
+
+function backHome(){
+  document.getElementById("quiz").style.display = "none";
+  document.getElementById("home").style.display = "block";
+  loadStats();
+}
+
+function loadStats(){
+  const statsList = document.getElementById("stats");
+  statsList.innerHTML = "";
+
+  db.collection("results").orderBy("date", "desc").get().then(snapshot => {
+    snapshot.forEach(doc => {
+      const r = doc.data();
+      const li = document.createElement("li");
+
+      li.innerText = 
+        r.user + " – " + casData[r.cas].title +
+        " : " + r.score + "/" + r.total +
+        " (" + r.date + ")";
+
+      statsList.appendChild(li);
+    });
+
+    if(statsList.innerHTML === "") {
+      statsList.innerHTML = "<li>Aucune tentative enregistrée.</li>";
+    }
+  });
+}
+
+function toggleDark(){
+  document.body.classList.toggle("dark");
+}
+</script>
+
+</body>
+</html>
